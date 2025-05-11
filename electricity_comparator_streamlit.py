@@ -1,19 +1,31 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Electricity Quote Comparator", layout="wide")
-st.title("⚡ Electricity Quote Comparator")
+st.set_page_config(page_title="Σύγκριση Παρόχων Ρεύματος", layout="wide")
+st.title("⚡ Σύγκριση Προσφορών Παρόχων Ηλεκτρικού Ρεύματος")
 
 st.markdown("""
-Enter your average **weekly usage in kWh**, and fill in provider details.
-We'll compare them side-by-side based on weekly, monthly, and annual cost (after discounts).
+Εισάγετε την **κατανάλωση ρεύματος**, επιλέγοντας αν είναι εβδομαδιαία, μηνιαία ή ετήσια.
+Στη συνέχεια, προσθέστε τους παρόχους για να δείτε ποιος προσφέρει την καλύτερη τιμή.
 """)
 
-# --- Step 1: User inputs average weekly usage
-weekly_usage = st.number_input("🔌 Average Weekly Usage (kWh)", min_value=0.0, value=100.0, step=1.0)
+# === Κατανάλωση & Επιλογή Μονάδας ===
+col_input = st.columns(2)
+with col_input[0]:
+    usage_unit = st.selectbox("Μονάδα Κατανάλωσης", ["Εβδομαδιαία (kWh)", "Μηνιαία (kWh)", "Ετήσια (kWh)"])
+with col_input[1]:
+    raw_usage = st.number_input("Κατανάλωση Ρεύματος", min_value=0.0, value=100.0, step=1.0)
 
-# --- Step 2: Dynamic provider input
-st.subheader("🏢 Provider Information")
+# --- Μετατροπή σε εβδομαδιαία βάση
+if "Εβδομαδιαία" in usage_unit:
+    weekly_usage = raw_usage
+elif "Μηνιαία" in usage_unit:
+    weekly_usage = raw_usage / 4.345  # average weeks/month
+else:  # Ετήσια
+    weekly_usage = raw_usage / 52
+
+# --- Πληροφορίες Παρόχου
+st.subheader("🏢 Στοιχεία Παρόχου")
 
 if "providers" not in st.session_state:
     st.session_state.providers = []
@@ -21,63 +33,61 @@ if "providers" not in st.session_state:
 with st.form("add_provider_form", clear_on_submit=True):
     col1, col2, col3 = st.columns(3)
     with col1:
-        name = st.text_input("Provider Name")
-        rate = st.number_input("Rate per unit (kWh)", min_value=0.0, value=0.30)
+        name = st.text_input("Όνομα Παρόχου")
+        rate = st.number_input("Χρέωση ανά kWh (€)", min_value=0.0, value=0.30)
     with col2:
-        standing_charge = st.number_input("Daily Standing Charge", min_value=0.0, value=0.50)
-        contract_months = st.number_input("Contract Length (months)", min_value=1, value=12)
+        standing_charge = st.number_input("Πάγιο (Μηνιαίο, €)", min_value=0.0, value=15.0)
+        contract_months = st.number_input("Διάρκεια Συμβολαίου (μήνες)", min_value=1, value=12)
     with col3:
-        discount = st.number_input("Manual Discount (£)", min_value=0.0, value=0.0)
+        discount = st.number_input("Έκπτωση/Προσφορά (€)", min_value=0.0, value=0.0)
 
-    submitted = st.form_submit_button("Add Provider")
+    submitted = st.form_submit_button("Προσθήκη Παρόχου")
     if submitted and name:
         st.session_state.providers.append({
-            'Provider': name,
-            'Rate': rate,
-            'Standing Charge': standing_charge,
-            'Contract (months)': contract_months,
-            'Discount': discount
+            'Πάροχος': name,
+            'Χρέωση': rate,
+            'Πάγιο': standing_charge,
+            'Μήνες': contract_months,
+            'Έκπτωση': discount
         })
 
-# --- Step 3: Show provider table
+# --- Πίνακας Παρόχων
 if st.session_state.providers:
-    st.markdown("### 📋 Providers Added")
+    st.markdown("### 📋 Προστιθέμενοι Πάροχοι")
     st.dataframe(pd.DataFrame(st.session_state.providers))
 
-    # --- Step 4: Perform Calculations
     def calculate_costs(providers, weekly_usage):
         results = []
         for p in providers:
-            weekly_units = p['Rate'] * weekly_usage
-            weekly_standing = p['Standing Charge'] * 7
+            weekly_units = p['Χρέωση'] * weekly_usage
+            weekly_standing = p['Πάγιο'] / 4.345  # Μηνιαίο -> Εβδομαδιαίο
             weekly_total = weekly_units + weekly_standing
 
             annual_total = weekly_total * 52
-            annual_after_discount = annual_total - p['Discount']
+            annual_after_discount = annual_total - p['Έκπτωση']
             monthly_after_discount = annual_after_discount / 12
             weekly_after_discount = annual_after_discount / 52
 
             results.append({
-                "Provider": p['Provider'],
-                "Weekly (£)": round(weekly_after_discount, 2),
-                "Monthly (£)": round(monthly_after_discount, 2),
-                "Annual (£)": round(annual_after_discount, 2)
+                "Πάροχος": p['Πάροχος'],
+                "Εβδομαδιαίο (€)": round(weekly_after_discount, 2),
+                "Μηνιαίο (€)": round(monthly_after_discount, 2),
+                "Ετήσιο (€)": round(annual_after_discount, 2)
             })
-        return sorted(results, key=lambda x: x["Annual (£)"])
+        return sorted(results, key=lambda x: x["Ετήσιο (€)"])
 
     results = calculate_costs(st.session_state.providers, weekly_usage)
 
-    st.markdown("### 📊 Comparison Table (Sorted by Annual Cost)")
+    st.markdown("### 📊 Πίνακας Σύγκρισης (Κατά Ετήσιο Κόστος)")
     df_results = pd.DataFrame(results)
     st.dataframe(df_results)
 
-    # Optional: Highlight best deal
     best = df_results.iloc[0]
-    st.success(f"💡 Best Deal: **{best['Provider']}** at £{best['Annual (£)']:.2f}/year")
+    st.success(f"💡 Καλύτερη Επιλογή: **{best['Πάροχος']}** με κόστος €{best['Ετήσιο (€)']:.2f} / έτος")
 
 else:
-    st.info("Add at least one provider to see comparison.")
+    st.info("Προσθέστε τουλάχιστον έναν πάροχο για να δείτε συγκριτικά στοιχεία.")
 
-# --- Reset button
-if st.button("🔁 Reset Providers"):
+# --- Κουμπί Επαναφοράς
+if st.button("🔁 Εκκαθάριση Παρόχων"):
     st.session_state.providers = []
